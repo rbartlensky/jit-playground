@@ -21,7 +21,7 @@ static uint64_t decode_64_bits(uint8_t p[static 8]) {
 static uint8_t* encode_32_bits(void *p) {
         uint32_t v = *((uint32_t*) p);
         static uint8_t bytes[4] = {0, 0, 0, 0};
-        for (int i = 0; i <= 4; ++i) {
+        for (int i = 0; i < 4; ++i) {
                 bytes[i] = (uint8_t)(v & 0xff);
                 v >>= 8;
         }
