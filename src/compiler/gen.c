@@ -1,6 +1,7 @@
 #include "gen.h"
 
 #include <assert.h>
+#include <stdbool.h>
 #include <stdio.h>
 
 LspLang lsp_create_lang() {
@@ -66,14 +67,25 @@ static int compile_number(LspState state[static 1], mpc_ast_t *ast, uint8_t res[
         return 0;
 }
 
-static int compile_sexpr(LspState state[static 1], mpc_ast_t *ast, uint8_t res[static 1]) {
-        mpc_ast_print(ast);
-        int sindex = mpc_ast_get_index(ast, "expr|symbol|regex");
-        if (sindex != 1) {
-                printf("Expected symbol at index 1.\n");
-                return -1;
+static bool is_arithmetic_op(char op[static 1]) {
+        size_t len = strlen(op);
+        if (len != 1) {
+                return false;
         }
+        switch (op[0]) {
+                case '+':
+                        return true;
+                default:
+                        return false;
+        }
+}
 
+static int compile_sexpr(LspState state[static 1], mpc_ast_t *ast, uint8_t res[static 1]);
+
+static int compile_arithmetic_expr(LspState state[static 1],
+                                   mpc_ast_t *ast,
+                                   size_t sindex,
+                                   uint8_t res[static 1]) {
         LspOpcode op;
         if (compile_arithmetic_op(ast->children[sindex], &op) != 0) {
                 return -1;
@@ -108,6 +120,21 @@ static int compile_sexpr(LspState state[static 1], mpc_ast_t *ast, uint8_t res[s
         cvector_push_back(state->instrs, lsp_new_instr(op, args));
         *res = out_reg;
         return 0;
+}
+
+static int compile_sexpr(LspState state[static 1], mpc_ast_t *ast, uint8_t res[static 1]) {
+        mpc_ast_print(ast);
+        int sindex = mpc_ast_get_index(ast, "expr|symbol|regex");
+        if (sindex != 1) {
+                printf("Expected symbol at index 1.\n");
+                return -1;
+        }
+
+        mpc_ast_t *symbol = ast->children[sindex];
+        if (is_arithmetic_op(symbol->contents)) {
+                return compile_arithmetic_expr(state, ast, sindex, res);
+        }
+        return -1;
 }
 
 LspState lsp_compile(mpc_ast_t *ast) {
