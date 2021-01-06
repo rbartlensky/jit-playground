@@ -15,5 +15,5 @@ TODO:
 
 ```shell
 make
-./out/lsp example.lsp
+./build/lsp example.lsp
 ```
