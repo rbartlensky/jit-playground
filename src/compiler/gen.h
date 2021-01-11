@@ -17,10 +17,19 @@ typedef struct LspLang {
         mpc_parser_t* lispy;
 } LspLang;
 
+/** The state of a function. */
+typedef struct LspFunc {
+        cvector_vector_type(LspInstr) instrs;
+        uint8_t num_of_params;
+} LspFunc;
+
 /** The compiler's state. */
 typedef struct LspState {
+        /* The constant table. */
         cvector_vector_type(int64_t) ints;
-        cvector_vector_type(LspInstr) instrs;
+        /* Compiled functions: 0 is the "main" function. */
+        cvector_vector_type(LspFunc) funcs;
+        size_t curr_func;
         uint8_t regs_in_use;
 } LspState;
 
@@ -38,3 +47,7 @@ void lsp_cleanup_lang(LspLang lang[static 1]);
 LspState lsp_compile(mpc_ast_t *ast);
 
 void lsp_cleanup_state(LspState state[static 1]);
+
+LspFunc lsp_new_func();
+
+void lsp_cleanup_func(LspFunc f[static 1]);

@@ -19,9 +19,9 @@ void lsp_cleanup_vm(LspVm vm[static 1]) {
 
 int lsp_interpret(LspVm vm[static 1]) {
         LspState *state = vm->state;
-        size_t len = cvector_size(vm->state->instrs);
+        size_t len = cvector_size(vm->state->funcs[0].instrs);
         while (vm->pc < len) {
-                LspInstr i = vm->state->instrs[vm->pc];
+                LspInstr i = vm->state->funcs[0].instrs[vm->pc];
                 switch (lsp_get_opcode(i)) {
                         case OP_LDC:
                                 vm->regs[lsp_get_arg1(i)] = state->ints[lsp_get_long_arg(i)];
