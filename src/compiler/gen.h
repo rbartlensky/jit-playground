@@ -17,10 +17,17 @@ typedef struct LspLang {
         mpc_parser_t* lispy;
 } LspLang;
 
+typedef struct LspSymbol {
+        char *name;
+        uint8_t reg;
+} LspSymbol;
+
 /** The state of a function. */
 typedef struct LspFunc {
+        cvector_vector_type(LspSymbol) symbols;
         cvector_vector_type(LspInstr) instrs;
         uint8_t num_of_params;
+        uint8_t regs_in_use;
 } LspFunc;
 
 /** The compiler's state. */
@@ -30,7 +37,6 @@ typedef struct LspState {
         /* Compiled functions: 0 is the "main" function. */
         cvector_vector_type(LspFunc) funcs;
         size_t curr_func;
-        uint8_t regs_in_use;
 } LspState;
 
 /** A vector (pointer to an array + its size). */

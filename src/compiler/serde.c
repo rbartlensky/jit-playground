@@ -164,7 +164,6 @@ LspState lsp_decode_state(const Vec data) {
         LspState s = {
                 .ints = ints,
                 .funcs = funcs,
-                .regs_in_use = 0,
         };
         return s;
 }

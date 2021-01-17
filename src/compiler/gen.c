@@ -39,6 +39,7 @@ LspFunc lsp_new_func() {
         LspFunc ret = {
                 .instrs = NULL,
                 .num_of_params = 0,
+                .regs_in_use = 0,
         };
         return ret;
 }
@@ -68,13 +69,14 @@ static int compile_number(LspState state[static 1], mpc_ast_t *ast, uint8_t res[
         // save the constant
         cvector_push_back(state->ints, num);
         // load into the next available register the constant's index
-        uint8_t reg = state->regs_in_use++;
+        LspFunc *f = &state->funcs[state->curr_func];
+        uint8_t reg = f->regs_in_use++;
         LspInstr instr = lsp_new_instr_l(
                 OP_LDC,
                 reg,
                 (uint32_t)(cvector_size(state->ints) - 1));
         // save the instruction
-        cvector_push_back(state->funcs[state->curr_func].instrs, instr);
+        cvector_push_back(f->instrs, instr);
         *res = reg;
         return 0;
 }
@@ -90,6 +92,18 @@ static bool is_arithmetic_op(char op[static 1]) {
                 default:
                         return false;
         }
+}
+
+static int find_symbol(LspState state[static 1], char *sym, uint8_t res[static 1]) {
+        LspFunc *f = &state->funcs[state->curr_func];
+        for (size_t i = 0; i < cvector_size(f->symbols); ++i) {
+                LspSymbol *s = &f->symbols[i];
+                if (strcmp(s->name, sym) == 0) {
+                        *res = s->reg;
+                        return 0;
+                }
+        }
+        return -1;
 }
 
 static int compile_sexpr(LspState state[static 1], mpc_ast_t *ast, uint8_t res[static 1]);
@@ -117,6 +131,9 @@ static int compile_arithmetic_expr(LspState state[static 1],
                         ret = compile_number(state, child, &out_regs[i-2]);
                 } else if (strcmp(child->tag, "expr|sexpr|>") == 0) {
                         ret = compile_sexpr(state, child, &out_regs[i-2]);
+
+                } else if (strcmp(child->tag, "expr|symbol|regex") == 0) {
+                        ret = find_symbol(state, child->contents, &out_regs[i-2]);
                 } else {
                         printf("Can only compile number arguments.\n");
                         ret = -1;
@@ -127,45 +144,61 @@ static int compile_arithmetic_expr(LspState state[static 1],
         }
 
         // create the instruction that adds the two operands together
-        uint8_t out_reg = state->regs_in_use++;
+        LspFunc *f = &state->funcs[state->curr_func];
+        uint8_t out_reg = f->regs_in_use++;
         uint8_t args[3] = {out_reg, out_regs[0], out_regs[1]};
-        cvector_push_back(state->funcs[state->curr_func].instrs, lsp_new_instr(op, args));
+        cvector_push_back(f->instrs, lsp_new_instr(op, args));
         *res = out_reg;
         return 0;
 }
 
-static int compile_parameters(mpc_ast_t *ast, uint8_t res[static 1]) {
-        uint8_t num = 0;
+static int compile_parameters(LspFunc *f, mpc_ast_t *ast) {
+        uint8_t regs = 0;
         for (int i = 1; i < ast->children_num - 1; ++i) {
                 if (strcmp(ast->children[i]->tag, "expr|symbol|regex") == 0) {
-                        ++num;
+                        LspSymbol sym = { .name = ast->children[i]->contents, .reg = regs++ };
+                        cvector_push_back(f->symbols, sym);
                 } else {
                         printf("Invalid parameter name.\n");
                         return -1;
                 }
         }
-        *res = num;
+        f->regs_in_use = regs;
+        f->num_of_params = regs;
         return 0;
 }
 
 static int compile_defun(LspState state[static 1],
                          mpc_ast_t *ast,
-                         size_t sindex) {
+                         size_t sindex,
+                         uint8_t res[static 1]) {
         size_t saved_curr_func = state->curr_func++;
-        LspFunc f = lsp_new_func();
-        cvector_push_back(state->funcs, f);
+        size_t index = cvector_size(state->funcs);
+        assert(index < 256);
+        cvector_push_back(state->funcs, lsp_new_func());
+        LspFunc *f = &state->funcs[state->curr_func];
         if (ast->children_num < 5) {
                 printf("Bad function\n");
                 return -1;
         }
         // sindex + 1 == function name
         // sindex + 2 == parameters list
-        compile_parameters(ast->children[sindex + 2], &f.num_of_params);
-        uint8_t res = 0;
+        if (compile_parameters(f, ast->children[sindex + 2]) != 0) {
+                return -1;
+        }
+        uint8_t last_res = 0;
         for (int i = sindex + 3; i < ast->children_num - 1; ++i) {
-                compile_sexpr(state, ast->children[i], &res);
+                compile_sexpr(state, ast->children[i], &last_res);
         }
         state->curr_func = saved_curr_func;
+        LspFunc *curr_func = &state->funcs[saved_curr_func];
+        uint8_t reg = curr_func->regs_in_use++;
+        uint8_t args[3] = {reg, index, 0};
+        LspInstr ldf = lsp_new_instr(OP_LDF, args);
+        cvector_push_back(curr_func->instrs, ldf);
+        LspSymbol sym = { .name = ast->children[sindex + 1]->contents, .reg = reg };
+        cvector_push_back(curr_func->symbols, sym);
+        *res = reg;
         return 0;
 }
 
@@ -182,7 +215,10 @@ static int compile_sexpr(LspState state[static 1], mpc_ast_t *ast, uint8_t res[s
         if (is_arithmetic_op(symbol->contents)) {
                 return compile_arithmetic_expr(state, ast, sindex, res);
         } else if (strcmp(symbol->contents, "defun") == 0) {
-                return compile_defun(state, ast, sindex);
+                return compile_defun(state, ast, sindex, res);
+        } else {
+                // we are dealing with a symbol, so let's look it up
+                return find_symbol(state, symbol->contents, res);
         }
         return -1;
 }
@@ -191,7 +227,6 @@ LspState lsp_compile(mpc_ast_t *ast) {
         LspState s = {
                 .ints = NULL,
                 .funcs = NULL,
-                .regs_in_use = 0,
         };
         uint8_t reg = 0;
         cvector_push_back(s.funcs, lsp_new_func());
@@ -201,6 +236,7 @@ LspState lsp_compile(mpc_ast_t *ast) {
                 }
         }
         for (size_t i = 0; i < cvector_size(s.funcs); ++i) {
+                printf("Func %ld:\n", i);
                 cvector_vector_type(LspInstr) instrs = s.funcs[i].instrs;
                 if (instrs) {
                         for (size_t j = 0; j < cvector_size(instrs); ++j) {

@@ -31,6 +31,9 @@ int lsp_interpret(LspVm vm[static 1]) {
                                 vm->regs[lsp_get_arg1(i)] = vm->regs[lsp_get_arg2(i)] + vm->regs[lsp_get_arg3(i)];
                                 vm->pc++;
                                 break;
+                        default:
+                                printf("Not implemented yet...\n");
+                                exit(1);
                 }
         }
         return 0;

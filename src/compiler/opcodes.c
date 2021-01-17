@@ -41,6 +41,8 @@ const char *lsp_opcode_str(LspOpcode o) {
                         return "LDC";
                 case OP_ADD:
                         return "ADD";
+                case OP_LDF:
+                        return "LDF";
                 default:
                         printf("UNKNOWN OPCODE %d!\n", o);
                         exit(1);

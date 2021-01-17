@@ -7,6 +7,7 @@
 typedef enum {
         OP_LDC = 0,
         OP_ADD = 1,
+        OP_LDF = 2,
 } LspOpcode;
 
 
