@@ -1,11 +1,12 @@
 #pragma once
 
 #include "compiler/gen.h"
+#include "vm/value.h"
 
 #include <cvector.h>
 
 typedef struct LspVm {
-        cvector_vector_type(uint64_t) regs;
+        cvector_vector_type(LspValue) regs;
         uint64_t pc;
         LspState *state;
 } LspVm;

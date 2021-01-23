@@ -15,7 +15,7 @@ debug: lsp
 $(OUT)/mpc.o: out third-party/mpc.c
 	$(CC) -c third-party/mpc.c -o $(OUT)/mpc.o
 
-lsp: src/*.c src/compiler/*.c $(OUT)/mpc.o
+lsp: src/*.c src/compiler/*.c src/vm/*.c $(OUT)/mpc.o
 	$(CC) $(CFLAGS) -o $(OUT)/lsp $? $(INCL)
 
 clean:
