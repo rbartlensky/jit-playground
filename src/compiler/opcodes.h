@@ -8,6 +8,9 @@ typedef enum {
         OP_LDC = 0,
         OP_ADD = 1,
         OP_LDF = 2,
+        // R[A] = R[B](R[B+1], ..., R[C])
+        OP_CALL = 3,
+        OP_MOV = 4,
 } LspOpcode;
 
 

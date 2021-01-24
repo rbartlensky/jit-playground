@@ -5,7 +5,7 @@
 
 #define LSP_TAG_MASK 0xfffffffffffffff0
 
-static void* lsp_malloc(size_t s) {
+inline static void* lsp_malloc(size_t s) {
         void *m = malloc(s);
         if (!m) {
                 printf("OOM!\n");

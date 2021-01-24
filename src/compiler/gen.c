@@ -22,7 +22,7 @@ LspLang lsp_create_lang() {
                   " comment             : /;[^\\r\\n]*/ ;                    "
                   " sexpr               : '(' <expr>* ')' ;                  "
                   " expr                : <number>  | <symbol> | <string>    "
-                  "                     | <comment> | <sexpr>  | <qexpr> ;   "
+                  "                     | <comment> | <sexpr> ;              "
                   " lispy               : /^/ <expr>* /$/ ;                  ",
                   lang.number, lang.symbol, lang.string, lang.comment,
                   lang.sexpr, lang.expr, lang.lispy, NULL);
@@ -96,7 +96,7 @@ static bool is_arithmetic_op(char op[static 1]) {
 
 static int find_symbol(LspState state[static 1], char *sym, uint8_t res[static 1]) {
         LspFunc *f = &state->funcs[state->curr_func];
-        for (size_t i = 0; i < cvector_size(f->symbols); ++i) {
+        for (size_t i = cvector_size(f->symbols) - 1; i < cvector_size(f->symbols); --i) {
                 LspSymbol *s = &f->symbols[i];
                 if (strcmp(s->name, sym) == 0) {
                         *res = s->reg;
@@ -107,6 +107,20 @@ static int find_symbol(LspState state[static 1], char *sym, uint8_t res[static 1
 }
 
 static int compile_sexpr(LspState state[static 1], mpc_ast_t *ast, uint8_t res[static 1]);
+
+static int compile_expr(LspState state[static 1], mpc_ast_t *child, uint8_t res[static 1]) {
+        if (strcmp(child->tag, "expr|number|regex") == 0) {
+                return compile_number(state, child, res);
+        } else if (strcmp(child->tag, "expr|sexpr|>") == 0) {
+                return compile_sexpr(state, child, res);
+        } else if (strcmp(child->tag, "expr|symbol|regex") == 0) {
+                return find_symbol(state, child->contents, res);
+        } else {
+                printf("Can only compile number arguments.\n");
+                return -1;
+        }
+        return -1;
+}
 
 static int compile_arithmetic_expr(LspState state[static 1],
                                    mpc_ast_t *ast,
@@ -126,19 +140,7 @@ static int compile_arithmetic_expr(LspState state[static 1],
         uint8_t out_regs[2] = {0, 0};
         for (int i = 2; i < ast->children_num - 1; ++i) {
                 mpc_ast_t *child = ast->children[i];
-                int ret = 0;
-                if (strcmp(child->tag, "expr|number|regex") == 0) {
-                        ret = compile_number(state, child, &out_regs[i-2]);
-                } else if (strcmp(child->tag, "expr|sexpr|>") == 0) {
-                        ret = compile_sexpr(state, child, &out_regs[i-2]);
-
-                } else if (strcmp(child->tag, "expr|symbol|regex") == 0) {
-                        ret = find_symbol(state, child->contents, &out_regs[i-2]);
-                } else {
-                        printf("Can only compile number arguments.\n");
-                        ret = -1;
-                }
-                if (ret != 0) {
+                if (compile_expr(state, child, &out_regs[i-2]) != 0) {
                         return -1;
                 }
         }
@@ -188,7 +190,7 @@ static int compile_defun(LspState state[static 1],
         }
         uint8_t last_res = 0;
         for (int i = sindex + 3; i < ast->children_num - 1; ++i) {
-                compile_sexpr(state, ast->children[i], &last_res);
+                compile_expr(state, ast->children[i], &last_res);
         }
         state->curr_func = saved_curr_func;
         LspFunc *curr_func = &state->funcs[saved_curr_func];
@@ -196,9 +198,55 @@ static int compile_defun(LspState state[static 1],
         uint8_t args[3] = {reg, index, 0};
         LspInstr ldf = lsp_new_instr(OP_LDF, args);
         cvector_push_back(curr_func->instrs, ldf);
+        printf("Saving symbol %s in func %ld!\n", ast->children[sindex + 1]->contents, saved_curr_func);
         LspSymbol sym = { .name = ast->children[sindex + 1]->contents, .reg = reg };
         cvector_push_back(curr_func->symbols, sym);
         *res = reg;
+        return 0;
+}
+
+static int compile_call(LspState state[static 1],
+                        mpc_ast_t *ast,
+                        size_t sindex,
+                        uint8_t res[static 1]) {
+        // find the symbol that we are calling
+        mpc_ast_t *symbol = ast->children[sindex];
+        LspFunc *f = &state->funcs[state->curr_func];
+        uint8_t sym_reg = f->regs_in_use++;
+        if (find_symbol(state, symbol->contents, &sym_reg) != 0) {
+                return -1;
+        }
+        {
+                uint8_t args[3] = {f->regs_in_use - 1, sym_reg, 0};
+                LspInstr instr = lsp_new_instr(OP_MOV, args);
+                cvector_push_back(f->instrs, instr);
+        }
+        sym_reg = f->regs_in_use - 1;
+
+        // compile each argument
+        assert(ast->children_num - sindex <= 255);
+        uint8_t total_args = ast->children_num - sindex - 2;
+        uint8_t regs[256];
+        for (int i = sindex + 1; i < ast->children_num - 1; ++i) {
+                compile_expr(state, ast->children[i], &regs[i-sindex-1]);
+        }
+
+        // move each argument into a new register, such that all arguments are
+        // in consecutive registers, and start at `sym_reg + 1`
+        for (uint8_t i = 0; i < total_args; ++i) {
+                if (sym_reg + i + 1 != regs[i]) {
+                        uint8_t args[3] = {sym_reg + i + 1, regs[i], 0};
+                        LspInstr instr = lsp_new_instr(OP_MOV, args);
+                        cvector_push_back(f->instrs, instr);
+                }
+        }
+
+        // prepare the call instruction
+        uint8_t out_reg = f->regs_in_use++;
+        uint8_t args[3] = {out_reg, sym_reg, sym_reg + total_args};
+        LspInstr instr = lsp_new_instr(OP_CALL, args);
+        cvector_push_back(f->instrs, instr);
+        *res = out_reg;
         return 0;
 }
 
@@ -217,8 +265,7 @@ static int compile_sexpr(LspState state[static 1], mpc_ast_t *ast, uint8_t res[s
         } else if (strcmp(symbol->contents, "defun") == 0) {
                 return compile_defun(state, ast, sindex, res);
         } else {
-                // we are dealing with a symbol, so let's look it up
-                return find_symbol(state, symbol->contents, res);
+                return compile_call(state, ast, sindex, res);
         }
         return -1;
 }
