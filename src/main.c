@@ -9,6 +9,13 @@ int main(int argc, char **argv) {
                         LspState s = lsp_compile(r.output);
                         LspVm vm = lsp_new_vm(&s);
                         lsp_interpret(&vm);
+                        for (size_t i = 0; i < cvector_size(vm.regs); ++i) {
+                                LspValue v = vm.regs[i];
+                                if (v) {
+                                        printf("Reg[%ld]: ", i);
+                                        lsp_print_val(v);
+                                }
+                        }
                         lsp_cleanup_vm(&vm);
                         lsp_cleanup_state(&s);
                         mpc_ast_delete(r.output);

@@ -6,9 +6,11 @@
 #include <cvector.h>
 
 typedef struct LspVm {
+        size_t regs_start;
         cvector_vector_type(LspValue) regs;
         uint64_t pc;
         LspState *state;
+        size_t curr_fn;
 } LspVm;
 
 LspVm lsp_new_vm(LspState state[static 1]);

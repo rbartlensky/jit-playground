@@ -18,4 +18,10 @@ LspTag lsp_get_tag(LspValue v);
 
 int64_t* lsp_get_number(LspValue v);
 
+uint8_t lsp_get_fn(LspValue v);
+
 void lsp_print_val(LspValue v);
+
+void lsp_free_val(LspValue v);
+
+void lsp_replace_val(LspValue *self, LspValue with);
