@@ -27,15 +27,23 @@ static LspValue add(LspValue v1, LspValue v2) {
         return lsp_new_number(n1 + n2);
 }
 
+static LspValue sub(LspValue v1, LspValue v2) {
+        assert(lsp_get_tag(v1) == TAG_INT);
+        assert(lsp_get_tag(v2) == TAG_INT);
+        int64_t n1 = *lsp_get_number(v1);
+        int64_t n2 = *lsp_get_number(v2);
+        return lsp_new_number(n1 - n2);
+}
+
 static LspValue eq(LspValue v1, LspValue v2) {
         LspTag t1 = lsp_get_tag(v1);
         assert(t1 == lsp_get_tag(v2));
         if (t1 == TAG_INT) {
                 int64_t n1 = *lsp_get_number(v1);
                 int64_t n2 = *lsp_get_number(v2);
-                return n1 == n2;
+                return lsp_new_number(n1 == n2);
         }
-        return v1 == v2;
+        return lsp_new_number(v1 == v2);
 }
 
 inline static int interpret_call(LspVm vm[static 1], LspInstr i) {
@@ -109,6 +117,15 @@ int lsp_interpret(LspVm vm[static 1]) {
                         vm->pc++;
                 }
                         break;
+                case OP_SUB: {
+                        uint8_t r1 = lsp_get_arg1(i) + vm->regs_start;
+                        uint8_t r2 = lsp_get_arg2(i) + vm->regs_start;
+                        uint8_t r3 = lsp_get_arg3(i) + vm->regs_start;
+                        lsp_replace_val(&vm->regs[r1],
+                                        sub(vm->regs[r2], vm->regs[r3]));
+                        vm->pc++;
+                }
+                        break;
                 case OP_EQ: {
                         uint8_t r1 = lsp_get_arg1(i) + vm->regs_start;
                         uint8_t r2 = lsp_get_arg2(i) + vm->regs_start;
@@ -134,6 +151,28 @@ int lsp_interpret(LspVm vm[static 1]) {
                         break;
                 case OP_CALL:
                         interpret_call(vm, i);
+                        break;
+                case OP_TEST: {
+                        uint8_t r1 = lsp_get_arg1(i) + vm->regs_start;
+                        LspValue v1 = vm->regs[r1];
+                        LspTag t1 = lsp_get_tag(v1);
+                        switch (t1) {
+                        case TAG_INT: {
+                                int64_t *n = lsp_get_number(v1);
+                                if (*n != 0) {
+                                        vm->pc++;
+                                }
+                        }
+                                break;
+                        case TAG_FN:
+                                vm->pc++;
+                                break;
+                        }
+                        vm->pc++;
+                }
+                        break;
+                case OP_JMP:
+                        vm->pc += lsp_get_long_arg(i);
                         break;
                 default:
                         printf("Not implemented yet...\n");

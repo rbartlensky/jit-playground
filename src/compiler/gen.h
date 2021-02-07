@@ -24,6 +24,7 @@ typedef struct LspSymbol {
 
 /** The state of a function. */
 typedef struct LspFunc {
+        const char *name;
         cvector_vector_type(LspSymbol) symbols;
         cvector_vector_type(LspInstr) instrs;
         uint8_t num_of_params;

@@ -12,6 +12,11 @@ typedef enum {
         OP_CALL = 3,
         OP_MOV = 4,
         OP_EQ = 5,
+        // if R[A] == 1, then skip next instr
+        OP_TEST = 6,
+        // pc += long_arg
+        OP_JMP = 7,
+        OP_SUB = 8,
 } LspOpcode;
 
 

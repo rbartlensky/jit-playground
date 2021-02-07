@@ -35,8 +35,9 @@ void lsp_cleanup_lang(LspLang lang[static 1]) {
                     lang->sexpr, lang->expr, lang->lispy);
 }
 
-LspFunc lsp_new_func() {
+LspFunc lsp_new_func(const char *name) {
         LspFunc ret = {
+                .name = name,
                 .instrs = NULL,
                 .num_of_params = 0,
                 .regs_in_use = 0,
@@ -52,10 +53,12 @@ static int compile_op(mpc_ast_t *ast, LspOpcode *opcode) {
         char *symbol = ast->contents;
         if (strcmp(symbol, "+") == 0) {
                 *opcode = OP_ADD;
+        } else if (strcmp(symbol, "-") == 0) {
+                *opcode = OP_SUB;
         } else if (strcmp(symbol, "=") == 0) {
                 *opcode = OP_EQ;
         } else {
-                printf("Can only compile '+' and '='.\n");
+                printf("Can only compile '+', '-', and '='.\n");
                 return -1;
         }
         return 0;
@@ -91,6 +94,7 @@ static bool is_op(char op[static 1]) {
         }
         switch (op[0]) {
         case '+':
+        case '-':
         case '=':
                 return true;
         default:
@@ -107,6 +111,17 @@ static int find_symbol(LspState state[static 1], char *sym, uint8_t res[static 1
                         return 0;
                 }
         }
+        for (size_t i = 1; i < cvector_size(state->funcs); ++i) {
+                if (strcmp(sym, state->funcs[i].name) == 0) {
+                        uint8_t reg = f->regs_in_use++;
+                        uint8_t args[3] = {reg, i, 0};
+                        LspInstr ldf = lsp_new_instr(OP_LDF, args);
+                        cvector_push_back(f->instrs, ldf);
+                        *res = reg;
+                        return 0;
+                }
+        }
+        printf("Failed to find symbol: %s.\n", sym);
         return -1;
 }
 
@@ -127,9 +142,9 @@ static int compile_expr(LspState state[static 1], mpc_ast_t *child, uint8_t res[
 }
 
 static int compile_two_op_expr(LspState state[static 1],
-                                   mpc_ast_t *ast,
-                                   size_t sindex,
-                                   uint8_t res[static 1]) {
+                               mpc_ast_t *ast,
+                               size_t sindex,
+                               uint8_t res[static 1]) {
         LspOpcode op;
         if (compile_op(ast->children[sindex], &op) != 0) {
                 return -1;
@@ -181,7 +196,9 @@ static int compile_defun(LspState state[static 1],
         size_t saved_curr_func = state->curr_func++;
         size_t index = cvector_size(state->funcs);
         assert(index < 256);
-        cvector_push_back(state->funcs, lsp_new_func());
+        cvector_push_back(
+                state->funcs,
+                lsp_new_func(ast->children[sindex + 1]->contents));
         LspFunc *f = &state->funcs[state->curr_func];
         if (ast->children_num < 5) {
                 printf("Bad function\n");
@@ -194,7 +211,9 @@ static int compile_defun(LspState state[static 1],
         }
         uint8_t last_res = 0;
         for (int i = sindex + 3; i < ast->children_num - 1; ++i) {
-                compile_expr(state, ast->children[i], &last_res);
+                if (compile_expr(state, ast->children[i], &last_res) != 0) {
+                        return -1;
+                }
         }
         state->curr_func = saved_curr_func;
         LspFunc *curr_func = &state->funcs[saved_curr_func];
@@ -253,7 +272,55 @@ static int compile_call(LspState state[static 1],
         return 0;
 }
 
+static int compile_if(LspState state[static 1],
+                      mpc_ast_t *ast,
+                      size_t sindex,
+                      uint8_t res[static 1]) {
+        if (ast->children_num != 6) {
+                printf("If statements must have an 3 operands.\n");
+                return -1;
+        }
+
+        // compile the condition
+        uint8_t condition = 0;
+        if (compile_sexpr(state, ast->children[sindex + 1], &condition) != 0) {
+                return -1;
+        }
+
+        LspFunc *f = &state->funcs[state->curr_func];
+        uint8_t test_args[3] = {condition, 0, 0};
+        cvector_push_back(f->instrs, lsp_new_instr(OP_TEST, test_args));
+        cvector_push_back(f->instrs, lsp_new_instr_l(OP_JMP, 0, 0));
+        size_t jmp_index = cvector_size(f->instrs) - 1;
+
+        uint8_t out_reg = f->regs_in_use++;
+        uint8_t true_br = 0;
+        if (compile_sexpr(state, ast->children[sindex + 2], &true_br) != 0) {
+                return -1;
+        }
+        uint8_t mov_args[3] = {out_reg, true_br, 0};
+        cvector_push_back(f->instrs, lsp_new_instr(OP_MOV, mov_args));
+        cvector_push_back(f->instrs, lsp_new_instr_l(OP_JMP, 0, 0));
+        size_t else_jmp_index = cvector_size(f->instrs) - 1;
+
+        uint8_t false_br = 0;
+        if (compile_sexpr(state, ast->children[sindex + 3], &false_br) != 0) {
+                return -1;
+        }
+        uint8_t mov_args2[3] = {out_reg, false_br, 0};
+        cvector_push_back(f->instrs, lsp_new_instr(OP_MOV, mov_args2));
+
+        // patch the jmp instructions
+        f->instrs[jmp_index] = lsp_new_instr_l(OP_JMP, 0, else_jmp_index - jmp_index + 1);
+        f->instrs[else_jmp_index] =
+                lsp_new_instr_l(OP_JMP, 0, cvector_size(f->instrs) - else_jmp_index);
+        *res = out_reg;
+
+        return 0;
+}
+
 static int compile_sexpr(LspState state[static 1], mpc_ast_t *ast, uint8_t res[static 1]) {
+        printf("-----\n");
         mpc_ast_print(ast);
         int sindex = 1;
         if (strcmp(ast->children[sindex]->tag, "expr|symbol|regex") != 0) {
@@ -267,6 +334,8 @@ static int compile_sexpr(LspState state[static 1], mpc_ast_t *ast, uint8_t res[s
                 return compile_two_op_expr(state, ast, sindex, res);
         } else if (strcmp(symbol->contents, "defun") == 0) {
                 return compile_defun(state, ast, sindex, res);
+        } else if (strcmp(symbol->contents, "if") == 0) {
+                return compile_if(state, ast, sindex, res);
         } else {
                 return compile_call(state, ast, sindex, res);
         }
@@ -279,9 +348,10 @@ LspState lsp_compile(mpc_ast_t *ast) {
                 .funcs = NULL,
         };
         uint8_t reg = 0;
-        cvector_push_back(s.funcs, lsp_new_func());
+        cvector_push_back(s.funcs, lsp_new_func("__main__"));
         for (int i = 1; i < ast->children_num - 1; ++i) {
                 if (compile_sexpr(&s, ast->children[i], &reg) != 0) {
+                        printf("Failed...\n");
                         break;
                 }
         }
