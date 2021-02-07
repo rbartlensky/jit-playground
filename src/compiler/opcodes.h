@@ -11,6 +11,7 @@ typedef enum {
         // R[A] = R[B](R[B+1], ..., R[C])
         OP_CALL = 3,
         OP_MOV = 4,
+        OP_EQ = 5,
 } LspOpcode;
 
 

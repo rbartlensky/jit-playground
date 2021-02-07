@@ -48,13 +48,16 @@ void lsp_cleanup_func(LspFunc f[static 1]) {
         cvector_free(f->instrs);
 }
 
-static int compile_arithmetic_op(mpc_ast_t *ast, LspOpcode *opcode) {
+static int compile_op(mpc_ast_t *ast, LspOpcode *opcode) {
         char *symbol = ast->contents;
-        if (strcmp(symbol, "+") != 0) {
-                printf("Can only compile additions.\n");
+        if (strcmp(symbol, "+") == 0) {
+                *opcode = OP_ADD;
+        } else if (strcmp(symbol, "=") == 0) {
+                *opcode = OP_EQ;
+        } else {
+                printf("Can only compile '+' and '='.\n");
                 return -1;
         }
-        *opcode = OP_ADD;
         return 0;
 }
 
@@ -81,16 +84,17 @@ static int compile_number(LspState state[static 1], mpc_ast_t *ast, uint8_t res[
         return 0;
 }
 
-static bool is_arithmetic_op(char op[static 1]) {
+static bool is_op(char op[static 1]) {
         size_t len = strlen(op);
         if (len != 1) {
                 return false;
         }
         switch (op[0]) {
-                case '+':
-                        return true;
-                default:
-                        return false;
+        case '+':
+        case '=':
+                return true;
+        default:
+                return false;
         }
 }
 
@@ -122,12 +126,12 @@ static int compile_expr(LspState state[static 1], mpc_ast_t *child, uint8_t res[
         return -1;
 }
 
-static int compile_arithmetic_expr(LspState state[static 1],
+static int compile_two_op_expr(LspState state[static 1],
                                    mpc_ast_t *ast,
                                    size_t sindex,
                                    uint8_t res[static 1]) {
         LspOpcode op;
-        if (compile_arithmetic_op(ast->children[sindex], &op) != 0) {
+        if (compile_op(ast->children[sindex], &op) != 0) {
                 return -1;
         }
 
@@ -198,7 +202,6 @@ static int compile_defun(LspState state[static 1],
         uint8_t args[3] = {reg, index, 0};
         LspInstr ldf = lsp_new_instr(OP_LDF, args);
         cvector_push_back(curr_func->instrs, ldf);
-        printf("Saving symbol %s in func %ld!\n", ast->children[sindex + 1]->contents, saved_curr_func);
         LspSymbol sym = { .name = ast->children[sindex + 1]->contents, .reg = reg };
         cvector_push_back(curr_func->symbols, sym);
         *res = reg;
@@ -260,8 +263,8 @@ static int compile_sexpr(LspState state[static 1], mpc_ast_t *ast, uint8_t res[s
         }
 
         mpc_ast_t *symbol = ast->children[sindex];
-        if (is_arithmetic_op(symbol->contents)) {
-                return compile_arithmetic_expr(state, ast, sindex, res);
+        if (is_op(symbol->contents)) {
+                return compile_two_op_expr(state, ast, sindex, res);
         } else if (strcmp(symbol->contents, "defun") == 0) {
                 return compile_defun(state, ast, sindex, res);
         } else {

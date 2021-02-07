@@ -27,6 +27,17 @@ static LspValue add(LspValue v1, LspValue v2) {
         return lsp_new_number(n1 + n2);
 }
 
+static LspValue eq(LspValue v1, LspValue v2) {
+        LspTag t1 = lsp_get_tag(v1);
+        assert(t1 == lsp_get_tag(v2));
+        if (t1 == TAG_INT) {
+                int64_t n1 = *lsp_get_number(v1);
+                int64_t n2 = *lsp_get_number(v2);
+                return n1 == n2;
+        }
+        return v1 == v2;
+}
+
 inline static int interpret_call(LspVm vm[static 1], LspInstr i) {
         uint8_t r2 = lsp_get_arg2(i) + vm->regs_start;
         LspValue v2 = vm->regs[r2];
@@ -81,43 +92,52 @@ int lsp_interpret(LspVm vm[static 1]) {
         while (vm->pc < len) {
                 LspInstr i = fn->instrs[vm->pc];
                 switch (lsp_get_opcode(i)) {
-                        case OP_LDC: {
-                                uint8_t r1 = lsp_get_arg1(i) + vm->regs_start;
-                                LspValue num = lsp_new_number(
-                                        state->ints[lsp_get_long_arg(i)]);
-                                lsp_replace_val(&vm->regs[r1], num);
-                                vm->pc++;
-                        }
-                                break;
-                        case OP_ADD: {
-                                uint8_t r1 = lsp_get_arg1(i) + vm->regs_start;
-                                uint8_t r2 = lsp_get_arg2(i) + vm->regs_start;
-                                uint8_t r3 = lsp_get_arg3(i) + vm->regs_start;
-                                lsp_replace_val(&vm->regs[r1],
-                                                add(vm->regs[r2], vm->regs[r3]));
-                                vm->pc++;
-                        }
-                                break;
-                        case OP_LDF: {
-                                uint8_t r1 = lsp_get_arg1(i) + vm->regs_start;
-                                lsp_replace_val(&vm->regs[r1],
-                                                lsp_new_fn(lsp_get_arg2(i)));
-                                vm->pc++;
-                        }
-                                break;
-                        case OP_MOV: {
-                                uint8_t r1 = lsp_get_arg1(i) + vm->regs_start;
-                                uint8_t r2 = lsp_get_arg2(i) + vm->regs_start;
-                                lsp_replace_val(&vm->regs[r1], vm->regs[r2]);
-                                vm->pc++;
-                        }
-                                break;
-                        case OP_CALL:
-                                interpret_call(vm, i);
-                                break;
-                        default:
-                                printf("Not implemented yet...\n");
-                                exit(1);
+                case OP_LDC: {
+                        uint8_t r1 = lsp_get_arg1(i) + vm->regs_start;
+                        LspValue num = lsp_new_number(
+                                state->ints[lsp_get_long_arg(i)]);
+                        lsp_replace_val(&vm->regs[r1], num);
+                        vm->pc++;
+                }
+                        break;
+                case OP_ADD: {
+                        uint8_t r1 = lsp_get_arg1(i) + vm->regs_start;
+                        uint8_t r2 = lsp_get_arg2(i) + vm->regs_start;
+                        uint8_t r3 = lsp_get_arg3(i) + vm->regs_start;
+                        lsp_replace_val(&vm->regs[r1],
+                                        add(vm->regs[r2], vm->regs[r3]));
+                        vm->pc++;
+                }
+                        break;
+                case OP_EQ: {
+                        uint8_t r1 = lsp_get_arg1(i) + vm->regs_start;
+                        uint8_t r2 = lsp_get_arg2(i) + vm->regs_start;
+                        uint8_t r3 = lsp_get_arg3(i) + vm->regs_start;
+                        lsp_replace_val(&vm->regs[r1],
+                                        eq(vm->regs[r2], vm->regs[r3]));
+                        vm->pc++;
+                }
+                        break;
+                case OP_LDF: {
+                        uint8_t r1 = lsp_get_arg1(i) + vm->regs_start;
+                        lsp_replace_val(&vm->regs[r1],
+                                        lsp_new_fn(lsp_get_arg2(i)));
+                        vm->pc++;
+                }
+                        break;
+                case OP_MOV: {
+                        uint8_t r1 = lsp_get_arg1(i) + vm->regs_start;
+                        uint8_t r2 = lsp_get_arg2(i) + vm->regs_start;
+                        lsp_replace_val(&vm->regs[r1], vm->regs[r2]);
+                        vm->pc++;
+                }
+                        break;
+                case OP_CALL:
+                        interpret_call(vm, i);
+                        break;
+                default:
+                        printf("Not implemented yet...\n");
+                        exit(1);
                 }
         }
         return 0;

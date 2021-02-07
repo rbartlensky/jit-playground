@@ -37,19 +37,21 @@ LspInstr lsp_new_instr_l(LspOpcode opcode, uint8_t reg, uint16_t big) {
 
 const char *lsp_opcode_str(LspOpcode o) {
         switch(o) {
-                case OP_LDC:
-                        return "LDC";
-                case OP_ADD:
-                        return "ADD";
-                case OP_LDF:
-                        return "LDF";
-                case OP_MOV:
-                        return "MOV";
-                case OP_CALL:
-                        return "CALL";
-                default:
-                        printf("UNKNOWN OPCODE %d!\n", o);
-                        exit(1);
+        case OP_LDC:
+                return "LDC";
+        case OP_ADD:
+                return "ADD";
+        case OP_LDF:
+                return "LDF";
+        case OP_MOV:
+                return "MOV";
+        case OP_CALL:
+                return "CALL";
+        case OP_EQ:
+                return "EQ";
+        default:
+                printf("UNKNOWN OPCODE %d!\n", o);
+                exit(1);
         }
 }
 
