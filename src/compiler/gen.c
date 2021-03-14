@@ -215,6 +215,10 @@ static int compile_defun(LspState state[static 1],
                         return -1;
                 }
         }
+        uint8_t ret_args[3] = {last_res, 0, 0};
+        LspInstr ret = lsp_new_instr(OP_RET, ret_args);
+        cvector_push_back(f->instrs, ret);
+
         state->curr_func = saved_curr_func;
         LspFunc *curr_func = &state->funcs[saved_curr_func];
         uint8_t reg = curr_func->regs_in_use++;

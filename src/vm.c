@@ -46,7 +46,29 @@ static LspValue eq(LspValue v1, LspValue v2) {
         return lsp_new_number(v1 == v2);
 }
 
+inline static size_t create_stack_frame(LspVm vm[static 1], size_t end, size_t new_len) {
+        if (new_len == 0) {
+                printf("Bad new_len\n");
+                exit(1);
+        }
+        size_t regs_len = cvector_size(vm->regs);
+        size_t new_regs = 0;
+        if (end >= regs_len) {
+                new_regs = new_len + end - regs_len;
+        } else {
+                size_t diff = regs_len - end;
+                if (new_len > diff) {
+                        new_regs = new_len - diff;
+                }
+        }
+        for (size_t i = 0; i < new_regs; ++i) {
+                cvector_push_back(vm->regs, 0);
+        }
+        return end;
+}
+
 inline static int interpret_call(LspVm vm[static 1], LspInstr i) {
+        uint8_t r1 = lsp_get_arg1(i) + vm->regs_start;
         uint8_t r2 = lsp_get_arg2(i) + vm->regs_start;
         LspValue v2 = vm->regs[r2];
         if (lsp_get_tag(v2) != TAG_FN) {
@@ -68,6 +90,12 @@ inline static int interpret_call(LspVm vm[static 1], LspInstr i) {
                 exit(1);
         }
 
+        // make sure we can accommodate the new registers
+        size_t top = create_stack_frame(
+                vm,
+                vm->regs_start + vm->state->funcs[vm->curr_fn].regs_in_use,
+                fn->regs_in_use);
+
         // save the old state
         size_t old_pc = vm->pc;
         size_t old_fn = vm->curr_fn;
@@ -75,18 +103,25 @@ inline static int interpret_call(LspVm vm[static 1], LspInstr i) {
 
         vm->pc = 0;
         vm->curr_fn = fn_index;
-        // the parameters of a function are always placed in the first n
-        // registers. Since the args are found in R[r2+1]..R[r3], that means
-        // we can simply move our "start" point to `r2 + 1`.
-        vm->regs_start = r2 + 1;
-        size_t extra_regs = fn->regs_in_use - (r3 - r2 - 1);
-        // create any missing regs
-        if (cvector_size(vm->regs) - r3 < extra_regs) {
-                for (size_t i = 0; i < extra_regs - (cvector_size(vm->regs) - r3); ++i) {
-                        cvector_push_back(vm->regs, 0);
-                }
+        vm->regs_start = top;
+
+        // copy all parameters to the new stack frame
+        for (size_t i = r2 + 1, j = top; i <= r3; ++i, ++j) {
+                vm->regs[j] = lsp_copy_val(&vm->regs[i]);
         }
         int ret = lsp_interpret(vm);
+
+        // save ret value
+        size_t last_instr = cvector_size(fn->instrs) - 1;
+        LspInstr ret_instr = fn->instrs[last_instr];
+        if (lsp_get_opcode(ret_instr) != OP_RET) {
+                printf("Bytecode of function didn't end in 'ret'.\n");
+                return -1;
+        }
+        uint8_t r_ret = lsp_get_arg1(ret_instr) + vm->regs_start;
+        lsp_exchange_val(&vm->regs[r1], &vm->regs[r_ret]);
+
+        // restore old state
         vm->pc = ++old_pc;
         vm->curr_fn = old_fn;
         vm->regs_start = old_regs_start;
@@ -173,6 +208,10 @@ int lsp_interpret(LspVm vm[static 1]) {
                         break;
                 case OP_JMP:
                         vm->pc += lsp_get_long_arg(i);
+                        break;
+                case OP_RET:
+                        // most of this is handled by call
+                        vm->pc++;
                         break;
                 default:
                         printf("Not implemented yet...\n");

@@ -17,6 +17,7 @@ typedef enum {
         // pc += long_arg
         OP_JMP = 7,
         OP_SUB = 8,
+        OP_RET = 9,
 } LspOpcode;
 
 

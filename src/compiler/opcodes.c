@@ -55,6 +55,8 @@ const char* lsp_opcode_str(LspOpcode o) {
                 return "JMP";
         case OP_SUB:
                 return "SUB";
+        case OP_RET:
+                return "RET";
         default:
                 printf("UNKNOWN OPCODE %d!\n", o);
                 exit(1);

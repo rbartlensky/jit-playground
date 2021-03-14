@@ -62,3 +62,18 @@ void lsp_replace_val(LspValue *self, LspValue with) {
         lsp_free_val(*self);
         *self = with;
 }
+
+void lsp_exchange_val(LspValue *self, LspValue *with) {
+        LspValue tmp = *self;
+        *self = *with;
+        *with = tmp;
+}
+
+LspValue lsp_copy_val(LspValue *self) {
+        switch (lsp_get_tag(*self)) {
+                case TAG_INT:
+                        return lsp_new_number(*lsp_get_number(*self));
+                default:
+                        return *self;
+        }
+}
