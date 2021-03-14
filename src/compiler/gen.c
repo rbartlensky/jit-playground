@@ -193,7 +193,8 @@ static int compile_defun(LspState state[static 1],
                          mpc_ast_t *ast,
                          size_t sindex,
                          uint8_t res[static 1]) {
-        size_t saved_curr_func = state->curr_func++;
+        size_t saved_curr_func = state->curr_func;
+        state->curr_func = cvector_size(state->funcs);
         size_t index = cvector_size(state->funcs);
         assert(index < 256);
         cvector_push_back(
@@ -242,19 +243,21 @@ static int compile_call(LspState state[static 1],
         if (find_symbol(state, symbol->contents, &sym_reg) != 0) {
                 return -1;
         }
-        {
+        if (sym_reg != f->regs_in_use - 1) {
                 uint8_t args[3] = {f->regs_in_use - 1, sym_reg, 0};
                 LspInstr instr = lsp_new_instr(OP_MOV, args);
                 cvector_push_back(f->instrs, instr);
+                sym_reg = f->regs_in_use - 1;
         }
-        sym_reg = f->regs_in_use - 1;
 
         // compile each argument
         assert(ast->children_num - sindex <= 255);
         uint8_t total_args = ast->children_num - sindex - 2;
         uint8_t regs[256];
         for (int i = sindex + 1; i < ast->children_num - 1; ++i) {
-                compile_expr(state, ast->children[i], &regs[i-sindex-1]);
+                if (compile_expr(state, ast->children[i], &regs[i-sindex-1]) != 0) {
+                        return -1;
+                }
         }
 
         // move each argument into a new register, such that all arguments are
@@ -326,6 +329,11 @@ static int compile_if(LspState state[static 1],
 static int compile_sexpr(LspState state[static 1], mpc_ast_t *ast, uint8_t res[static 1]) {
         printf("-----\n");
         mpc_ast_print(ast);
+        if (strcmp(ast->tag, "expr|symbol|regex") == 0) {
+                if (find_symbol(state, ast->contents, res) == 0) {
+                        return 0;
+                }
+        }
         int sindex = 1;
         if (strcmp(ast->children[sindex]->tag, "expr|symbol|regex") != 0) {
                 mpc_state_t st = ast->children[sindex]->state;
