@@ -1,6 +1,7 @@
 #pragma once
 
 #include "compiler/gen.h"
+#include "vm/jit.h"
 #include "vm/value.h"
 
 #include <cvector.h>
@@ -11,6 +12,7 @@ typedef struct LspVm {
         uint64_t pc;
         LspState *state;
         size_t curr_fn;
+        JitState jit;
 } LspVm;
 
 LspVm lsp_new_vm(LspState state[static 1]);

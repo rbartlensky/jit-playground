@@ -1,18 +1,10 @@
 #include "value.h"
+#include "utils.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 
 #define LSP_TAG_MASK 0xfffffffffffffff0
-
-inline static void* lsp_malloc(size_t s) {
-        void *m = malloc(s);
-        if (!m) {
-                printf("OOM!\n");
-                exit(-1);
-        }
-        return m;
-}
 
 LspValue lsp_new_number(int64_t n) {
         int64_t *n_ptr = lsp_malloc(sizeof(n));

@@ -11,12 +11,14 @@ LspVm lsp_new_vm(LspState state[static 1]) {
                 .pc = 0,
                 .state = state,
                 .curr_fn = 0,
+                .jit = lsp_jit_new(),
         };
         return vm;
 }
 
 void lsp_cleanup_vm(LspVm vm[static 1]) {
         cvector_free(vm->regs);
+        lsp_jit_free(&vm->jit);
 }
 
 static LspValue add(LspValue v1, LspValue v2) {
