@@ -47,6 +47,7 @@ LspFunc lsp_new_func(const char *name) {
 
 void lsp_cleanup_func(LspFunc f[static 1]) {
         cvector_free(f->instrs);
+        cvector_free(f->symbols);
 }
 
 static int compile_op(mpc_ast_t *ast, LspOpcode *opcode) {
@@ -382,7 +383,7 @@ LspState lsp_compile(mpc_ast_t *ast) {
 void lsp_cleanup_state(LspState s[static 1]) {
         cvector_free(s->ints);
         for (size_t i = 0; i < cvector_size(s->funcs); ++i) {
-                cvector_free(s->funcs[i].instrs);
+                lsp_cleanup_func(&s->funcs[i]);
         }
         cvector_free(s->funcs);
 }

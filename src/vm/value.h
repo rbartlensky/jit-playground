@@ -23,7 +23,7 @@ void lsp_print_val(LspValue v);
 
 void lsp_free_val(LspValue v);
 
-void lsp_replace_val(LspValue *self, LspValue with);
+void lsp_replace_val(LspValue *self, LspValue *with);
 
 void lsp_exchange_val(LspValue *self, LspValue *with);
 

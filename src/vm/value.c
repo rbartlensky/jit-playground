@@ -41,6 +41,9 @@ void lsp_print_val(LspValue v) {
 }
 
 void lsp_free_val(LspValue v) {
+        if (v == 0) {
+                return;
+        }
         switch (lsp_get_tag(v)) {
                 case TAG_INT:
                         free(lsp_get_number(v));
@@ -50,9 +53,10 @@ void lsp_free_val(LspValue v) {
         }
 }
 
-void lsp_replace_val(LspValue *self, LspValue with) {
+void lsp_replace_val(LspValue *self, LspValue *with) {
         lsp_free_val(*self);
-        *self = with;
+        *self = *with;
+        *with = 0;
 }
 
 void lsp_exchange_val(LspValue *self, LspValue *with) {

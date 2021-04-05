@@ -17,6 +17,9 @@ LspVm lsp_new_vm(LspState state[static 1]) {
 }
 
 void lsp_cleanup_vm(LspVm vm[static 1]) {
+        for (size_t i = 0; i < cvector_size(vm->regs); ++i) {
+                lsp_free_val(vm->regs[i]);
+        }
         cvector_free(vm->regs);
         lsp_jit_free(&vm->jit);
 }
@@ -141,7 +144,7 @@ int lsp_interpret(LspVm vm[static 1]) {
                         uint8_t r1 = lsp_get_arg1(i) + vm->regs_start;
                         LspValue num = lsp_new_number(
                                 state->ints[lsp_get_long_arg(i)]);
-                        lsp_replace_val(&vm->regs[r1], num);
+                        lsp_replace_val(&vm->regs[r1], &num);
                         vm->pc++;
                 }
                         break;
@@ -149,8 +152,8 @@ int lsp_interpret(LspVm vm[static 1]) {
                         uint8_t r1 = lsp_get_arg1(i) + vm->regs_start;
                         uint8_t r2 = lsp_get_arg2(i) + vm->regs_start;
                         uint8_t r3 = lsp_get_arg3(i) + vm->regs_start;
-                        lsp_replace_val(&vm->regs[r1],
-                                        add(vm->regs[r2], vm->regs[r3]));
+                        LspValue add_v = add(vm->regs[r2], vm->regs[r3]);
+                        lsp_replace_val(&vm->regs[r1], &add_v);
                         vm->pc++;
                 }
                         break;
@@ -158,8 +161,8 @@ int lsp_interpret(LspVm vm[static 1]) {
                         uint8_t r1 = lsp_get_arg1(i) + vm->regs_start;
                         uint8_t r2 = lsp_get_arg2(i) + vm->regs_start;
                         uint8_t r3 = lsp_get_arg3(i) + vm->regs_start;
-                        lsp_replace_val(&vm->regs[r1],
-                                        sub(vm->regs[r2], vm->regs[r3]));
+                        LspValue sub_v = sub(vm->regs[r2], vm->regs[r3]);
+                        lsp_replace_val(&vm->regs[r1], &sub_v);
                         vm->pc++;
                 }
                         break;
@@ -167,22 +170,22 @@ int lsp_interpret(LspVm vm[static 1]) {
                         uint8_t r1 = lsp_get_arg1(i) + vm->regs_start;
                         uint8_t r2 = lsp_get_arg2(i) + vm->regs_start;
                         uint8_t r3 = lsp_get_arg3(i) + vm->regs_start;
-                        lsp_replace_val(&vm->regs[r1],
-                                        eq(vm->regs[r2], vm->regs[r3]));
+                        LspValue eq_v = eq(vm->regs[r2], vm->regs[r3]);
+                        lsp_replace_val(&vm->regs[r1], &eq_v);
                         vm->pc++;
                 }
                         break;
                 case OP_LDF: {
                         uint8_t r1 = lsp_get_arg1(i) + vm->regs_start;
-                        lsp_replace_val(&vm->regs[r1],
-                                        lsp_new_fn(lsp_get_arg2(i)));
+                        LspValue fun = lsp_new_fn(lsp_get_arg2(i));
+                        lsp_replace_val(&vm->regs[r1], &fun);
                         vm->pc++;
                 }
                         break;
                 case OP_MOV: {
                         uint8_t r1 = lsp_get_arg1(i) + vm->regs_start;
                         uint8_t r2 = lsp_get_arg2(i) + vm->regs_start;
-                        lsp_replace_val(&vm->regs[r1], vm->regs[r2]);
+                        lsp_replace_val(&vm->regs[r1], &vm->regs[r2]);
                         vm->pc++;
                 }
                         break;
