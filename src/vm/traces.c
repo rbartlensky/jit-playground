@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-TraceNode lsp_trace_node_new(size_t instr) {
+TraceNode lsp_trace_node_new(LspInstr instr) {
         TraceNode ret = {
                 .instr = instr,
                 .children = {NULL, NULL},
@@ -12,7 +12,7 @@ TraceNode lsp_trace_node_new(size_t instr) {
         return ret;
 }
 
-TraceNode* lsp_trace_node_add_child(TraceNode self[static 1], size_t instr) {
+TraceNode* lsp_trace_node_add_child(TraceNode self[static 1], LspInstr instr) {
         if (self->len == 2) {
                 return NULL;
         }
@@ -24,10 +24,31 @@ TraceNode* lsp_trace_node_add_child(TraceNode self[static 1], size_t instr) {
 
 void lsp_trace_node_free(TraceNode self[static 1]) {
         for (uint8_t i = 0; i < self->len; ++i) {
+                lsp_trace_node_free(self->children[i]);
                 free(self->children[i]);
                 self->children[i] = NULL;
         }
         self->len = 0;
+}
+
+TraceList lsp_trace_list_new(LspInstr instr) {
+        TraceNode *node = lsp_malloc(sizeof(TraceNode));
+        *node = lsp_trace_node_new(instr);
+        TraceList list = {
+                .head = node,
+                .tail = node,
+        };
+        return list;
+}
+
+TraceNode* lsp_trace_list_add(TraceList self[static 1], LspInstr instr) {
+        self->tail = lsp_trace_node_add_child(self->tail, instr);
+        return self->tail;
+}
+
+void lsp_trace_list_free(TraceList self[static 1]) {
+        lsp_trace_node_free(self->head);
+        free(self->head);
 }
 
 TraceMap lsp_trace_map_new() {

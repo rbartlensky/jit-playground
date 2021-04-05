@@ -73,6 +73,8 @@ inline static size_t create_stack_frame(LspVm vm[static 1], size_t end, size_t n
 }
 
 inline static int interpret_call(LspVm vm[static 1], LspInstr i) {
+        lsp_jit_trace_start(&vm->jit);
+
         uint8_t r1 = lsp_get_arg1(i) + vm->regs_start;
         uint8_t r2 = lsp_get_arg2(i) + vm->regs_start;
         LspValue v2 = vm->regs[r2];
@@ -130,6 +132,8 @@ inline static int interpret_call(LspVm vm[static 1], LspInstr i) {
         vm->pc = ++old_pc;
         vm->curr_fn = old_fn;
         vm->regs_start = old_regs_start;
+
+        lsp_jit_trace_end(&vm->jit, fn_index);
         return ret;
 }
 
@@ -139,6 +143,7 @@ int lsp_interpret(LspVm vm[static 1]) {
         size_t len = cvector_size(fn->instrs);
         while (vm->pc < len) {
                 LspInstr i = fn->instrs[vm->pc];
+                lsp_jit_record(&vm->jit, i);
                 switch (lsp_get_opcode(i)) {
                 case OP_LDC: {
                         uint8_t r1 = lsp_get_arg1(i) + vm->regs_start;
