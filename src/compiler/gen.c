@@ -128,20 +128,6 @@ static int find_symbol(LspState state[static 1], char *sym, uint8_t res[static 1
 
 static int compile_sexpr(LspState state[static 1], mpc_ast_t *ast, uint8_t res[static 1]);
 
-static int compile_expr(LspState state[static 1], mpc_ast_t *child, uint8_t res[static 1]) {
-        if (strcmp(child->tag, "expr|number|regex") == 0) {
-                return compile_number(state, child, res);
-        } else if (strcmp(child->tag, "expr|sexpr|>") == 0) {
-                return compile_sexpr(state, child, res);
-        } else if (strcmp(child->tag, "expr|symbol|regex") == 0) {
-                return find_symbol(state, child->contents, res);
-        } else {
-                printf("Can only compile number arguments.\n");
-                return -1;
-        }
-        return -1;
-}
-
 static int compile_two_op_expr(LspState state[static 1],
                                mpc_ast_t *ast,
                                size_t sindex,
@@ -160,7 +146,7 @@ static int compile_two_op_expr(LspState state[static 1],
         uint8_t out_regs[2] = {0, 0};
         for (int i = 2; i < ast->children_num - 1; ++i) {
                 mpc_ast_t *child = ast->children[i];
-                if (compile_expr(state, child, &out_regs[i-2]) != 0) {
+                if (compile_sexpr(state, child, &out_regs[i-2]) != 0) {
                         return -1;
                 }
         }
@@ -213,7 +199,7 @@ static int compile_defun(LspState state[static 1],
         }
         uint8_t last_res = 0;
         for (int i = sindex + 3; i < ast->children_num - 1; ++i) {
-                if (compile_expr(state, ast->children[i], &last_res) != 0) {
+                if (compile_sexpr(state, ast->children[i], &last_res) != 0) {
                         return -1;
                 }
         }
@@ -256,7 +242,7 @@ static int compile_call(LspState state[static 1],
         uint8_t total_args = ast->children_num - sindex - 2;
         uint8_t regs[256];
         for (int i = sindex + 1; i < ast->children_num - 1; ++i) {
-                if (compile_expr(state, ast->children[i], &regs[i-sindex-1]) != 0) {
+                if (compile_sexpr(state, ast->children[i], &regs[i-sindex-1]) != 0) {
                         return -1;
                 }
         }
@@ -330,9 +316,18 @@ static int compile_if(LspState state[static 1],
 static int compile_sexpr(LspState state[static 1], mpc_ast_t *ast, uint8_t res[static 1]) {
         printf("-----\n");
         mpc_ast_print(ast);
-        if (strcmp(ast->tag, "expr|symbol|regex") == 0) {
-                if (find_symbol(state, ast->contents, res) == 0) {
-                        return 0;
+        if (ast->children_num == 0) {
+                if (strcmp(ast->tag, "expr|symbol|regex") == 0) {
+                        if (find_symbol(state, ast->contents, res) == 0) {
+                                return 0;
+                        }
+                } else if (strcmp(ast->tag, "expr|number|regex") == 0) {
+                        if (compile_number(state, ast, res) == 0) {
+                                return 0;
+                        }
+                } else {
+                        printf("Can only compile symbols and numbers: %ld:%ld.\n.", ast->state.row + 1, ast->state.col);
+                        return -1;
                 }
         }
         int sindex = 1;
