@@ -60,7 +60,7 @@ static void print_trace_node(TraceNode self[static 1], size_t level) {
                         break;
         }
         for (uint8_t i = 0; i < self->len; ++i) {
-                print_trace_node(self->children[i], level + i);
+                print_trace_node(self->children[i], level + 1);
         }
 }
 
