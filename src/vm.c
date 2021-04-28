@@ -114,7 +114,8 @@ inline static int interpret_call(LspVm vm[static 1], LspInstr i) {
 
         // copy all parameters to the new stack frame
         for (size_t i = r2 + 1, j = top; i <= r3; ++i, ++j) {
-                vm->regs[j] = lsp_copy_val(&vm->regs[i]);
+                LspValue v = lsp_copy_val(&vm->regs[i]);
+                lsp_replace_val(&vm->regs[j], &v);
         }
         int ret = lsp_interpret(vm);
 

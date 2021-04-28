@@ -226,6 +226,7 @@ void lsp_trace_map_free(TraceMap self[static 1]) {
                 if (t.index != 0) {
                         lsp_trace_node_print(t.traces);
                         lsp_trace_node_free(t.traces);
+                        free(t.traces);
                 }
         }
         free(self->traces);
