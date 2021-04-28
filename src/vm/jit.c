@@ -32,12 +32,6 @@ void lsp_jit_trace_end(JitState self[static 1], size_t func) {
         }
         TraceList list = self->open_traces[last - 1];
         cvector_pop_back(self->open_traces);
-        printf("Closed trace for function: %ld\n", func);
-        TraceNode *p = list.head;
-        while (p) {
-                printf("Instr is: ");
-                lsp_print_instr(p->instr);
-                p = p->children[0];
-        }
-        lsp_trace_list_free(&list);
+        // list deallocation is handled by the map
+        lsp_trace_map_insert(&self->traces, func, &list);
 }
