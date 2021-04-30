@@ -1,5 +1,6 @@
 #pragma once
 
+#include "value.h"
 #include "traces.h"
 
 #include "cvector.h"
@@ -15,6 +16,6 @@ void lsp_jit_free(JitState self[static 1]);
 
 void lsp_jit_trace_start(JitState self[static 1]);
 
-void lsp_jit_record(JitState self[static 1], LspInstr i);
+void lsp_jit_record(JitState self[static 1], LspInstr i, LspValue *regs);
 
 void lsp_jit_trace_end(JitState self[static 1], size_t func);

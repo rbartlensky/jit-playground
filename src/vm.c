@@ -144,7 +144,7 @@ int lsp_interpret(LspVm vm[static 1]) {
         size_t len = cvector_size(fn->instrs);
         while (vm->pc < len) {
                 LspInstr i = fn->instrs[vm->pc];
-                lsp_jit_record(&vm->jit, i);
+                lsp_jit_record(&vm->jit, i, vm->regs + vm->regs_start);
                 switch (lsp_get_opcode(i)) {
                 case OP_LDC: {
                         uint8_t r1 = lsp_get_arg1(i) + vm->regs_start;
@@ -201,18 +201,8 @@ int lsp_interpret(LspVm vm[static 1]) {
                 case OP_TEST: {
                         uint8_t r1 = lsp_get_arg1(i) + vm->regs_start;
                         LspValue v1 = vm->regs[r1];
-                        LspTag t1 = lsp_get_tag(v1);
-                        switch (t1) {
-                        case TAG_INT: {
-                                int64_t *n = lsp_get_number(v1);
-                                if (*n != 0) {
-                                        vm->pc++;
-                                }
-                        }
-                                break;
-                        case TAG_FN:
+                        if (lsp_val_to_bool(v1)) {
                                 vm->pc++;
-                                break;
                         }
                         vm->pc++;
                 }

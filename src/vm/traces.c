@@ -1,16 +1,17 @@
 #include "traces.h"
 
 #include <assert.h>
-#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 
-TraceNode lsp_trace_node_new(LspInstr instr) {
+#define HOT_TRACE_COUNT 4
+
+TraceNode lsp_trace_node_new(LspInstr instr, NodeMetadata md) {
         TraceNode ret = {
                 .instr = instr,
                 .type = NODE_INSTR,
                 .children = {NULL, NULL},
-                .len = 0,
+                .metadata = md,
         };
         return ret;
 }
@@ -20,34 +21,61 @@ TraceNode lsp_trace_node_new_len(size_t len) {
                 .trace_len = len,
                 .type = NODE_LEN,
                 .children = {NULL, NULL},
-                .len = 0,
+                .metadata = NODE_MD_NONE,
         };
         return ret;
 }
 
 TraceNode* lsp_trace_node_add_child(TraceNode self[static 1], TraceNode node[static 1]) {
-        if (self->len == 2) {
-                return NULL;
+        for (uint8_t i = 0; i < 2; ++i) {
+                if (!self->children[i]) {
+                        self->children[i] = node;
+                        return node;
+                }
         }
-        self->children[self->len++] = node;
+        return NULL;
+}
+
+
+TraceNode* lsp_trace_node_insert_child(TraceNode self[static 1], TraceNode node[static 1], bool right) {
+        uint8_t i = right ? 1 : 0;
+        if (self->children[i]) {
+                lsp_trace_node_free(self->children[i]);
+                free(self->children[i]);
+        }
+        self->children[i] = node;
         return node;
 }
 
 void lsp_trace_node_free(TraceNode self[static 1]) {
-        for (uint8_t i = 0; i < self->len; ++i) {
-                lsp_trace_node_free(self->children[i]);
-                free(self->children[i]);
-                self->children[i] = NULL;
+        for (uint8_t i = 0; i < 2; ++i) {
+                if (self->children[i]) {
+                        lsp_trace_node_free(self->children[i]);
+                        free(self->children[i]);
+                        self->children[i] = NULL;
+                }
         }
-        self->len = 0;
+}
+
+static TraceNode* clone_trace_node(TraceNode self[static 1]) {
+        TraceNode *node = lsp_malloc(sizeof(TraceNode));
+        TraceNode data = {
+                .type = self->type,
+                .children = {NULL, NULL},
+                .metadata = self->metadata,
+        };
+        *node = data;
+        if (self->type == NODE_INSTR) {
+                node->instr = self->instr;
+        } else {
+                node->trace_len = self->trace_len;
+        }
+        return node;
+
 }
 
 static void print_trace_node(TraceNode self[static 1], size_t level) {
-        if (self->len == 2) {
-                printf("+");
-        } else {
-                printf("|");
-        }
+        printf("|");
         for (size_t i = 0; i < level; ++i) {
                 printf("-");
         }
@@ -59,8 +87,10 @@ static void print_trace_node(TraceNode self[static 1], size_t level) {
                         lsp_print_instr(self->instr);
                         break;
         }
-        for (uint8_t i = 0; i < self->len; ++i) {
-                print_trace_node(self->children[i], level + 1);
+        for (uint8_t i = 0; i < 2; ++i) {
+                if (self->children[i]) {
+                        print_trace_node(self->children[i], level + 1);
+                }
         }
 }
 
@@ -68,9 +98,9 @@ void lsp_trace_node_print(TraceNode self[static 1]) {
         print_trace_node(self, 0);
 }
 
-TraceList lsp_trace_list_new(LspInstr instr) {
+TraceList lsp_trace_list_new(TraceNode instr) {
         TraceNode *node = lsp_malloc(sizeof(TraceNode));
-        *node = lsp_trace_node_new(instr);
+        *node = instr;
         TraceList list = {
                 .head = node,
                 .tail = node,
@@ -78,9 +108,9 @@ TraceList lsp_trace_list_new(LspInstr instr) {
         return list;
 }
 
-TraceNode* lsp_trace_list_add(TraceList self[static 1], LspInstr instr) {
+TraceNode* lsp_trace_list_add(TraceList self[static 1], TraceNode instr) {
         TraceNode *node = lsp_malloc(sizeof(TraceNode));
-        *node = lsp_trace_node_new(instr);
+        *node = instr;
         self->tail = lsp_trace_node_add_child(self->tail, node);
         return self->tail;
 }
@@ -150,50 +180,49 @@ static bool equals(TraceNode n1[static 1], TraceNode n2[static 1]) {
  * \param `from` The list of traced instructions.
  */
 static void merge_traces(TraceNode to[static 1], TraceNode from[static 1]) {
-        assert(to->type == from->type && to->type == NODE_INSTR && to->instr == from->instr);
-        // first node is always an empty instruction
-        {
-                assert(from->instr == 0);
-                TraceNode *q = from->children[0];
-                free(from);
-                from = q;
-        }
+        TraceNode *trace_root = from;
+        TraceNode *prev_to = to, *prev_from = from;
 
-        // at every iteration, check if any of the tree's children matches the
-        // current node. If we find one, we go down one level in the tree.
-        // If we don't, it means this is a new trace, so we add a new child to
-        // the current node
-        bool stop = true;
+        // metadata == False means that we took the false branch, which is the
+        // same as the going down the sub-tree of our "right" child
         while (from) {
-                for (uint8_t i = 0; i < to->len; ++i) {
-                        if (equals(to->children[i], from)) {
-                                to = to->children[i];
-                                TraceNode *q = from->children[0];
-                                free(from);
-                                from = q;
-                                stop = false;
-                                break;
+                // when `to` is NULL, it means our trace went on a new path of execution
+                if (to && equals(to, from)) {
+                        uint8_t path = 1;
+                        if (from->metadata == NODE_MD_NONE || from->metadata == NODE_MD_TRUE) {
+                                path = 0;
                         }
-                }
-                if (stop) {
-                        assert(to->len < 2);
-                        to = lsp_trace_node_add_child(to, from);
-                        break;
+                        prev_to = to;
+                        to = to->children[path];
+                        prev_from = from;
+                        from = from->children[0];
                 } else {
-                        stop = true;
+                        assert(!to);
+                        bool right = true;
+                        if (prev_from->metadata == NODE_MD_NONE || prev_from->metadata == NODE_MD_TRUE) {
+                                right = false;
+                        }
+                        prev_to = lsp_trace_node_insert_child(prev_to, clone_trace_node(from), right);
+                        prev_from = from;
+                        from = from->children[0];
                 }
         }
-        while (to->len > 0) {
-                to = to->children[0];
-        }
-        if (to->type == NODE_LEN) {
-                printf("Num times trace executed: %ld\n", ++to->trace_len);
+        if (to && to->type == NODE_LEN) {
+                if (++to->trace_len == HOT_TRACE_COUNT) {
+                        // TODO:
+                        //   * convert "test" instrs into guards
+                        //   * compile into LLVM BC
+                        //   * execute compiled BC next time function is called
+                        printf("THIS IS A HOT TRACE! COMPILE IT!\n");
+                }
         } else {
                 TraceNode *node = lsp_malloc(sizeof(TraceNode));
                 *node = lsp_trace_node_new_len(1);
-                lsp_trace_node_add_child(to, node);
-                printf("Num times trace executed: 1\n");
+                lsp_trace_node_add_child(prev_to, node);
         }
+
+        lsp_trace_node_free(trace_root);
+        free(trace_root);
 }
 
 void lsp_trace_map_insert(TraceMap self[static 1], size_t i, TraceList trace[static 1]) {
@@ -211,13 +240,12 @@ void lsp_trace_map_insert(TraceMap self[static 1], size_t i, TraceList trace[sta
                 }
                 self->traces[map_index].index = i;
                 TraceNode *node = lsp_malloc(sizeof(TraceNode));
-                *node = lsp_trace_node_new_len(1);
-                trace->tail = lsp_trace_node_add_child(trace->tail, node);
-                self->traces[map_index].traces = trace->head;
+                *node = lsp_trace_node_new(0, NODE_MD_NONE);
+                self->traces[map_index].traces = node;
+                res = node;
                 self->len++;
-        } else {
-                merge_traces(res, trace->head);
         }
+        merge_traces(res, trace->head);
 }
 
 void lsp_trace_map_free(TraceMap self[static 1]) {

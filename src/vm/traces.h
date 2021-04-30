@@ -3,13 +3,20 @@
 #include "compiler/opcodes.h"
 #include "utils.h"
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
 typedef enum NodeType {
-        NODE_INSTR = 0,
-        NODE_LEN = 1,
+        NODE_INSTR,
+        NODE_LEN,
 } NodeType;
+
+typedef enum NodeMetadata {
+        NODE_MD_TRUE,
+        NODE_MD_FALSE,
+        NODE_MD_NONE,
+} NodeMetadata;
 
 typedef struct TraceNode {
         union {
@@ -18,14 +25,16 @@ typedef struct TraceNode {
         };
         struct TraceNode* children[2];
         NodeType type;
-        uint8_t len;
+        NodeMetadata metadata;
 } TraceNode;
 
-TraceNode lsp_trace_node_new(LspInstr instr);
+TraceNode lsp_trace_node_new(LspInstr instr, NodeMetadata md);
 
 TraceNode lsp_trace_node_new_len(size_t len);
 
 TraceNode* lsp_trace_node_add_child(TraceNode self[static 1], TraceNode node[static 1]);
+
+TraceNode* lsp_trace_node_insert_child(TraceNode self[static 1], TraceNode node[static 1], bool left);
 
 void lsp_trace_node_free(TraceNode self[static 1]);
 
@@ -36,9 +45,9 @@ typedef struct TraceList {
         TraceNode *tail;
 } TraceList;
 
-TraceList lsp_trace_list_new(LspInstr instr);
+TraceList lsp_trace_list_new(TraceNode instr);
 
-TraceNode* lsp_trace_list_add(TraceList self[static 1], LspInstr instr);
+TraceNode* lsp_trace_list_add(TraceList self[static 1], TraceNode instr);
 
 void lsp_trace_list_free(TraceList self[static 1]);
 
