@@ -8,8 +8,7 @@ Write a JIT compiler for a subset of lisp in C.
 
 TODO:
 * Implement more language features
-* Trace execution, and create traces of bytecode
-* Compile bytecode to x86_64 and execute when the particular path is hot.
+* Compile bytecode to x86_64 and execute when a particular path is hot.
 
 ### Running
 
