@@ -73,3 +73,19 @@ LspValue lsp_copy_val(LspValue *self) {
                         return *self;
         }
 }
+
+bool lsp_val_to_bool(LspValue self) {
+        LspTag t1 = lsp_get_tag(self);
+        switch (t1) {
+                case TAG_INT: {
+                        int64_t *n = lsp_get_number(self);
+                        if (*n != 0) {
+                                return true;
+                        }
+                }
+                        return false;
+                case TAG_FN:
+                        return true;
+        }
+        return false;
+}

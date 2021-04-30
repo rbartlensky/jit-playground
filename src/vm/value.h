@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdbool.h>
 #include <stdint.h>
 
 typedef enum LspTag {
@@ -28,3 +29,5 @@ void lsp_replace_val(LspValue *self, LspValue *with);
 void lsp_exchange_val(LspValue *self, LspValue *with);
 
 LspValue lsp_copy_val(LspValue *self);
+
+bool lsp_val_to_bool(LspValue self);
