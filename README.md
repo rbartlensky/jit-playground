@@ -14,5 +14,5 @@ TODO:
 
 ```shell
 make
-./build/lsp example.lsp
+./build/lsp examples/fib.lsp
 ```
