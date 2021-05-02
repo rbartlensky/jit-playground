@@ -1,4 +1,4 @@
-#include <vm.h>
+#include <vm/jit.h>
 #include <compiler/gen.h>
 
 int main(int argc, char **argv) {
@@ -7,16 +7,17 @@ int main(int argc, char **argv) {
         if (argc > 1) {
                 if (mpc_parse_contents(argv[1], lang.lispy, &r)) {
                         LspState s = lsp_compile(r.output);
-                        LspVm vm = lsp_new_vm(&s);
-                        lsp_interpret(&vm);
-                        for (size_t i = 0; i < cvector_size(vm.regs); ++i) {
-                                LspValue v = vm.regs[i];
+                        LspJit jit = lsp_jit_new(&s);
+                        LspVm *vm = &jit.vm;
+                        lsp_interpret(&jit);
+                        for (size_t i = 0; i < cvector_size(vm->regs); ++i) {
+                                LspValue v = vm->regs[i];
                                 if (v) {
                                         printf("Reg[%ld]: ", i);
                                         lsp_print_val(v);
                                 }
                         }
-                        lsp_cleanup_vm(&vm);
+                        lsp_jit_free(&jit);
                         lsp_cleanup_state(&s);
                         mpc_ast_delete(r.output);
                 } else {
