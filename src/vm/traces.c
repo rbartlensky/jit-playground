@@ -179,8 +179,7 @@ static bool equals(TraceNode n1[static 1], TraceNode n2[static 1]) {
  * \param `to` The tree of traces.
  * \param `from` The list of traced instructions.
  */
-static void merge_traces(TraceNode to[static 1], TraceNode from[static 1]) {
-        TraceNode *trace_root = from;
+static bool merge_traces(TraceNode to[static 1], TraceNode from[static 1]) {
         TraceNode *prev_to = to, *prev_from = from;
 
         // metadata == False means that we took the false branch, which is the
@@ -211,21 +210,17 @@ static void merge_traces(TraceNode to[static 1], TraceNode from[static 1]) {
                 if (++to->trace_len == HOT_TRACE_COUNT) {
                         // TODO:
                         //   * convert "test" instrs into guards
-                        //   * compile into LLVM BC
-                        //   * execute compiled BC next time function is called
-                        printf("THIS IS A HOT TRACE! COMPILE IT!\n");
+                        return true;
                 }
         } else {
                 TraceNode *node = lsp_malloc(sizeof(TraceNode));
                 *node = lsp_trace_node_new_len(1);
                 lsp_trace_node_add_child(prev_to, node);
         }
-
-        lsp_trace_node_free(trace_root);
-        free(trace_root);
+        return false;
 }
 
-void lsp_trace_map_insert(TraceMap self[static 1], size_t i, TraceList trace[static 1]) {
+bool lsp_trace_map_insert(TraceMap self[static 1], size_t i, TraceList trace[static 1]) {
         TraceNode *res = lsp_trace_map_get(self, i);
         if (!res) {
                 if (self->capacity == self->len) {
@@ -245,7 +240,7 @@ void lsp_trace_map_insert(TraceMap self[static 1], size_t i, TraceList trace[sta
                 res = node;
                 self->len++;
         }
-        merge_traces(res, trace->head);
+        return merge_traces(res, trace->head);
 }
 
 void lsp_trace_map_free(TraceMap self[static 1]) {

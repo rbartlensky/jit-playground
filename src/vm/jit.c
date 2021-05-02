@@ -1,10 +1,30 @@
 #include "jit.h"
 
 LspJit lsp_jit_new(LspState s[static 1]) {
+        LLVMLinkInMCJIT();
+        LLVMInitializeNativeTarget();
+        LLVMInitializeNativeAsmPrinter();
+
+        LLVMModuleRef mod = LLVMModuleCreateWithName("compiled_func");
+        LLVMExecutionEngineRef engine;
+        char *error = NULL;
+        if (LLVMCreateExecutionEngineForModule(&engine, mod, &error)) {
+                printf("Failed to create execution engine: %s", error);
+                exit(1);
+        }
+
+        LspVm vm = lsp_new_vm(s);
+        LLVMValueRef *compiled_funcs = NULL;
+        for (size_t i = 0; i < cvector_size(s->funcs); ++i) {
+                cvector_push_back(compiled_funcs, NULL);
+        }
         LspJit jit = {
                 .traces = lsp_trace_map_new(),
                 .open_traces = NULL,
-                .vm = lsp_new_vm(s),
+                .vm = vm,
+                .module = mod,
+                .engine = engine,
+                .compiled_funcs = compiled_funcs,
         };
         return jit;
 }
@@ -12,7 +32,9 @@ LspJit lsp_jit_new(LspState s[static 1]) {
 void lsp_jit_free(LspJit self[static 1]) {
         lsp_trace_map_free(&self->traces);
         cvector_free(self->open_traces);
+        cvector_free(self->compiled_funcs);
         lsp_cleanup_vm(&self->vm);
+        LLVMDisposeExecutionEngine(self->engine);
 }
 
 void lsp_jit_trace_start(LspJit self[static 1]) {
@@ -38,6 +60,86 @@ void lsp_jit_record(LspJit self[static 1], LspInstr i) {
         lsp_trace_list_add(&self->open_traces[last - 1], lsp_trace_node_new(i, md));
 }
 
+int lsp_dispatch() {
+        printf("DISPATCHED!\n");
+        return 1;
+}
+
+static void compile_trace(LspJit self[static 1], size_t f, TraceList trace[static 1]) {
+        LspFunc *func = &self->vm.state->funcs[f];
+        LLVMTypeRef param_types[256] = { LLVMInt32Type() };
+        for (uint8_t i = 0; i < func->num_of_params; ++i) {
+                param_types[i] = LLVMInt32Type();
+        }
+        LLVMTypeRef ret_type = LLVMFunctionType(LLVMInt32Type(), param_types, func->num_of_params, 0);
+        LLVMValueRef fib = LLVMAddFunction(self->module, func->name, ret_type);
+        LLVMTypeRef ret_type2 = LLVMFunctionType(LLVMInt32Type(), NULL, 0, 0);
+        LLVMAddFunction(self->module, "lsp_dispatch", ret_type2);
+        LLVMTypeRef dispatch_fn_ptr = LLVMPointerType(ret_type2, 0);
+        LLVMValueRef dispatch = LLVMConstInt(LLVMInt64Type(), (uint64_t)lsp_dispatch, 0);
+
+
+        LLVMBasicBlockRef entry = LLVMAppendBasicBlock(fib, "entry");
+        LLVMBuilderRef builder = LLVMCreateBuilder();
+        LLVMPositionBuilderAtEnd(builder, entry);
+        LLVMValueRef rf = LLVMBuildIntToPtr(builder, dispatch, dispatch_fn_ptr, "");
+
+
+        // skip first instruction always
+        LLVMValueRef regs[256];
+        for (uint8_t i = 0; i < func->num_of_params; ++i) {
+                regs[i] = LLVMGetParam(fib, i);
+        }
+
+        TraceNode *n = trace->head->children[0];
+        while (n) {
+                LspInstr i = n->instr;
+                lsp_print_instr(i);
+                switch (lsp_get_opcode(i)) {
+                        case OP_LDC: {
+                                regs[lsp_get_arg1(i)] =
+                                        LLVMConstInt(LLVMInt32Type(),
+                                                     self->vm.state->ints[lsp_get_arg2(i)],
+                                                     0);
+                        } break;
+                        case OP_ADD: {
+                                uint8_t r2 = lsp_get_arg2(i), r3 = lsp_get_arg3(i);
+                                regs[lsp_get_arg1(i)] = LLVMBuildAdd(builder, regs[r2], regs[r3], "");
+                        } break;
+                        case OP_SUB: {
+                                uint8_t r2 = lsp_get_arg2(i), r3 = lsp_get_arg3(i);
+                                regs[lsp_get_arg1(i)] = LLVMBuildSub(builder, regs[r2], regs[r3], "");
+                        } break;
+                        case OP_RET:
+                                LLVMBuildRet(builder, regs[lsp_get_arg1(i)]);
+                                break;
+                        case OP_MOV: {
+                                regs[lsp_get_arg1(i)] = regs[lsp_get_arg2(i)];
+                        } break;
+                        case OP_EQ: {
+                                uint8_t r2 = lsp_get_arg2(i), r3 = lsp_get_arg3(i);
+                                regs[lsp_get_arg1(i)] = LLVMBuildICmp(builder, LLVMIntEQ, regs[r2], regs[r3], "");
+                        } break;
+                        case OP_CALL: {
+                                regs[lsp_get_arg1(i)] = LLVMBuildCall(builder, rf, NULL, 0, "");
+                        } break;
+                        case OP_LDF: {
+                                regs[lsp_get_arg1(i)] =
+                                        LLVMConstInt(LLVMInt32Type(),
+                                                     lsp_get_arg2(i),
+                                                     0);
+                        } break;
+                        case OP_JMP:
+                        case OP_TEST:
+                                break;
+                }
+                n = n->children[0];
+        }
+        self->compiled_funcs[f] = fib;
+        LLVMDisposeBuilder(builder);
+        LLVMDumpModule(self->module);
+}
+
 void lsp_jit_trace_end(LspJit self[static 1], size_t func) {
         size_t last = cvector_size(self->open_traces);
         if (last == 0 || func == 0) {
@@ -46,7 +148,11 @@ void lsp_jit_trace_end(LspJit self[static 1], size_t func) {
         TraceList list = self->open_traces[last - 1];
         cvector_pop_back(self->open_traces);
         // list deallocation is handled by the map
-        lsp_trace_map_insert(&self->traces, func, &list);
+        bool is_hot = lsp_trace_map_insert(&self->traces, func, &list);
+        if (is_hot && !self->compiled_funcs[func]) {
+                compile_trace(self, func, &list);
+        }
+        lsp_trace_list_free(&list);
 }
 
 LspVm lsp_new_vm(LspState state[static 1]) {
@@ -121,7 +227,6 @@ inline static size_t create_stack_frame(LspVm vm[static 1], size_t end, size_t n
 
 inline static int interpret_call(LspJit jit[static 1], LspInstr i) {
         LspVm *vm = &jit->vm;
-        lsp_jit_trace_start(jit);
 
         uint8_t r1 = lsp_get_arg1(i) + vm->regs_start;
         uint8_t r2 = lsp_get_arg2(i) + vm->regs_start;
@@ -145,6 +250,24 @@ inline static int interpret_call(LspJit jit[static 1], LspInstr i) {
                 exit(1);
         }
 
+        LLVMValueRef func = jit->compiled_funcs[fn_index];
+        if (func) {
+                LLVMGenericValueRef arg1 =
+                        LLVMCreateGenericValueOfInt(LLVMInt32Type(), *lsp_get_number(vm->regs[r2 + 1]), 0);
+                LLVMGenericValueRef args[] = { arg1 };
+                LLVMGenericValueRef val = LLVMRunFunction(jit->engine, func, 1, args);
+                int ret = LLVMGenericValueToInt(val, 0);
+                LLVMDisposeGenericValue(val);
+                LLVMDisposeGenericValue(arg1);
+
+                LspValue new_val = lsp_new_number(ret);
+                lsp_replace_val(&vm->regs[r1], &new_val);
+                printf("Compiled func returned: %d in %d\n", ret, r1);
+                vm->pc++;
+                return 0;
+        }
+
+        lsp_jit_trace_start(jit);
         // make sure we can accommodate the new registers
         size_t top = create_stack_frame(
                 vm,

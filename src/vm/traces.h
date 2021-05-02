@@ -66,6 +66,6 @@ TraceMap lsp_trace_map_new();
 
 TraceNode* lsp_trace_map_get(const TraceMap self[static 1], size_t i);
 
-void lsp_trace_map_insert(TraceMap self[static 1], size_t i, TraceList trace[static 1]);
+bool lsp_trace_map_insert(TraceMap self[static 1], size_t i, TraceList trace[static 1]);
 
 void lsp_trace_map_free(TraceMap self[static 1]);
