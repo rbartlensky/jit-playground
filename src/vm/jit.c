@@ -65,77 +65,77 @@ int lsp_dispatch() {
         return 1;
 }
 
+static LLVMValueRef const_int(int64_t i) {
+        return LLVMConstInt(LLVMInt64Type(), i, 0);
+}
+
 static void compile_trace(LspJit self[static 1], size_t f, TraceList trace[static 1]) {
         LspFunc *func = &self->vm.state->funcs[f];
-        LLVMTypeRef param_types[256] = { LLVMInt32Type() };
-        for (uint8_t i = 0; i < func->num_of_params; ++i) {
-                param_types[i] = LLVMInt32Type();
-        }
-        LLVMTypeRef ret_type = LLVMFunctionType(LLVMInt32Type(), param_types, func->num_of_params, 0);
-        LLVMValueRef fib = LLVMAddFunction(self->module, func->name, ret_type);
-        LLVMTypeRef ret_type2 = LLVMFunctionType(LLVMInt32Type(), NULL, 0, 0);
+        // int64_t f(int64_t[num_of_params])
+        LLVMTypeRef param_type[1] = { LLVMArrayType(LLVMInt64Type(), func->num_of_params) };
+        LLVMTypeRef ret_type = LLVMFunctionType(LLVMInt64Type(), param_type, 1, 0);
+        LLVMValueRef llvm_fn = LLVMAddFunction(self->module, func->name, ret_type);
+
+        LLVMTypeRef ret_type2 = LLVMFunctionType(LLVMInt64Type(), NULL, 0, 0);
         LLVMAddFunction(self->module, "lsp_dispatch", ret_type2);
         LLVMTypeRef dispatch_fn_ptr = LLVMPointerType(ret_type2, 0);
         LLVMValueRef dispatch = LLVMConstInt(LLVMInt64Type(), (uint64_t)lsp_dispatch, 0);
 
 
-        LLVMBasicBlockRef entry = LLVMAppendBasicBlock(fib, "entry");
+        LLVMBasicBlockRef entry = LLVMAppendBasicBlock(llvm_fn, "entry");
         LLVMBuilderRef builder = LLVMCreateBuilder();
         LLVMPositionBuilderAtEnd(builder, entry);
         LLVMValueRef rf = LLVMBuildIntToPtr(builder, dispatch, dispatch_fn_ptr, "");
 
 
-        // skip first instruction always
+        LLVMValueRef params = LLVMGetParam(llvm_fn, 0);
         LLVMValueRef regs[256];
         for (uint8_t i = 0; i < func->num_of_params; ++i) {
-                regs[i] = LLVMGetParam(fib, i);
+                LLVMValueRef is[1] = { const_int(i) };
+                LLVMValueRef gep = LLVMBuildInBoundsGEP(builder, params, is, 1, "");
+                regs[i] = LLVMBuildLoad(builder, gep, "");
         }
 
+        // skip first instruction always
         TraceNode *n = trace->head->children[0];
         while (n) {
                 LspInstr i = n->instr;
-                lsp_print_instr(i);
+                uint8_t r1 = lsp_get_arg1(i);
                 switch (lsp_get_opcode(i)) {
-                        case OP_LDC: {
-                                regs[lsp_get_arg1(i)] =
-                                        LLVMConstInt(LLVMInt32Type(),
-                                                     self->vm.state->ints[lsp_get_arg2(i)],
-                                                     0);
-                        } break;
-                        case OP_ADD: {
-                                uint8_t r2 = lsp_get_arg2(i), r3 = lsp_get_arg3(i);
-                                regs[lsp_get_arg1(i)] = LLVMBuildAdd(builder, regs[r2], regs[r3], "");
-                        } break;
-                        case OP_SUB: {
-                                uint8_t r2 = lsp_get_arg2(i), r3 = lsp_get_arg3(i);
-                                regs[lsp_get_arg1(i)] = LLVMBuildSub(builder, regs[r2], regs[r3], "");
-                        } break;
-                        case OP_RET:
-                                LLVMBuildRet(builder, regs[lsp_get_arg1(i)]);
-                                break;
-                        case OP_MOV: {
-                                regs[lsp_get_arg1(i)] = regs[lsp_get_arg2(i)];
-                        } break;
-                        case OP_EQ: {
-                                uint8_t r2 = lsp_get_arg2(i), r3 = lsp_get_arg3(i);
-                                regs[lsp_get_arg1(i)] = LLVMBuildICmp(builder, LLVMIntEQ, regs[r2], regs[r3], "");
-                        } break;
-                        case OP_CALL: {
-                                regs[lsp_get_arg1(i)] = LLVMBuildCall(builder, rf, NULL, 0, "");
-                        } break;
-                        case OP_LDF: {
-                                regs[lsp_get_arg1(i)] =
-                                        LLVMConstInt(LLVMInt32Type(),
-                                                     lsp_get_arg2(i),
-                                                     0);
-                        } break;
-                        case OP_JMP:
-                        case OP_TEST:
-                                break;
+                case OP_LDC: {
+                        regs[r1] = const_int(self->vm.state->ints[lsp_get_arg2(i)]);
+                } break;
+                case OP_ADD: {
+                        uint8_t r2 = lsp_get_arg2(i), r3 = lsp_get_arg3(i);
+                        regs[r1] = LLVMBuildAdd(builder, regs[r2], regs[r3], "");
+                } break;
+                case OP_SUB: {
+                        uint8_t r2 = lsp_get_arg2(i), r3 = lsp_get_arg3(i);
+                        regs[r1] = LLVMBuildSub(builder, regs[r2], regs[r3], "");
+                } break;
+                case OP_RET:
+                        LLVMBuildRet(builder, regs[r1]);
+                        break;
+                case OP_MOV: {
+                        regs[r1] = regs[lsp_get_arg2(i)];
+                } break;
+                case OP_EQ: {
+                        uint8_t r2 = lsp_get_arg2(i), r3 = lsp_get_arg3(i);
+                        regs[r1] = LLVMBuildICmp(builder, LLVMIntEQ, regs[r2], regs[r3], "");
+                } break;
+                case OP_CALL: {
+                        regs[r1] = LLVMBuildCall(builder, rf, NULL, 0, "");
+                } break;
+                case OP_LDF: {
+                        regs[r1] = const_int(lsp_get_arg2(i));
+                } break;
+                case OP_JMP:
+                case OP_TEST:
+                        break;
                 }
                 n = n->children[0];
         }
-        self->compiled_funcs[f] = fib;
+        self->compiled_funcs[f] = llvm_fn;
         LLVMDisposeBuilder(builder);
         LLVMDumpModule(self->module);
 }
@@ -252,17 +252,17 @@ inline static int interpret_call(LspJit jit[static 1], LspInstr i) {
 
         LLVMValueRef func = jit->compiled_funcs[fn_index];
         if (func) {
-                LLVMGenericValueRef arg1 =
-                        LLVMCreateGenericValueOfInt(LLVMInt32Type(), *lsp_get_number(vm->regs[r2 + 1]), 0);
-                LLVMGenericValueRef args[] = { arg1 };
-                LLVMGenericValueRef val = LLVMRunFunction(jit->engine, func, 1, args);
-                int ret = LLVMGenericValueToInt(val, 0);
-                LLVMDisposeGenericValue(val);
-                LLVMDisposeGenericValue(arg1);
-
+                int64_t *params = lsp_malloc(sizeof(int64_t) * fn->num_of_params);
+                for (uint8_t r = r2 + 1; r < r3; ++r) {
+                        params[i] = *lsp_get_number(vm->regs[r]);
+                }
+                int64_t f_addr = LLVMGetFunctionAddress(jit->engine, fn->name);
+                int64_t (*f)(int64_t*) = (int64_t (*)(int64_t*))f_addr;
+                int64_t ret = (f)(params);
                 LspValue new_val = lsp_new_number(ret);
                 lsp_replace_val(&vm->regs[r1], &new_val);
-                printf("Compiled func returned: %d in %d\n", ret, r1);
+                free(params);
+                printf("Compiled func returned: %ld in %d\n", ret, r1);
                 vm->pc++;
                 return 0;
         }
