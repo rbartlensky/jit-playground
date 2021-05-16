@@ -65,6 +65,11 @@ int lsp_dispatch() {
         return 1;
 }
 
+void guard_handler() {
+        printf("ABORTING\n");
+        exit(1);
+}
+
 static LLVMValueRef const_int(int64_t i) {
         return LLVMConstInt(LLVMInt64Type(), i, 0);
 }
@@ -81,12 +86,16 @@ static void compile_trace(LspJit self[static 1], size_t f, TraceList trace[stati
         LLVMTypeRef dispatch_fn_ptr = LLVMPointerType(ret_type2, 0);
         LLVMValueRef dispatch = LLVMConstInt(LLVMInt64Type(), (uint64_t)lsp_dispatch, 0);
 
+        LLVMTypeRef guard_ret_type = LLVMFunctionType(LLVMVoidType(), NULL, 0, 0);
+        LLVMAddFunction(self->module, "guard_handler", guard_ret_type);
+        LLVMTypeRef guard_fn_ptr = LLVMPointerType(guard_ret_type, 0);
+        LLVMValueRef guard = LLVMConstInt(LLVMInt64Type(), (uint64_t)guard_handler, 0);
 
         LLVMBasicBlockRef entry = LLVMAppendBasicBlock(llvm_fn, "entry");
         LLVMBuilderRef builder = LLVMCreateBuilder();
         LLVMPositionBuilderAtEnd(builder, entry);
         LLVMValueRef rf = LLVMBuildIntToPtr(builder, dispatch, dispatch_fn_ptr, "");
-
+        LLVMValueRef guard_fn = LLVMBuildIntToPtr(builder, guard, guard_fn_ptr, "");
 
         LLVMValueRef params = LLVMGetParam(llvm_fn, 0);
         LLVMValueRef regs[256];
@@ -121,7 +130,8 @@ static void compile_trace(LspJit self[static 1], size_t f, TraceList trace[stati
                 } break;
                 case OP_EQ: {
                         uint8_t r2 = lsp_get_arg2(i), r3 = lsp_get_arg3(i);
-                        regs[r1] = LLVMBuildICmp(builder, LLVMIntEQ, regs[r2], regs[r3], "");
+                        LLVMValueRef cmp = LLVMBuildICmp(builder, LLVMIntEQ, regs[r2], regs[r3], "");
+                        regs[r1] = LLVMBuildIntCast(builder, cmp, LLVMInt64Type(), "");
                 } break;
                 case OP_CALL: {
                         regs[r1] = LLVMBuildCall(builder, rf, NULL, 0, "");
@@ -130,8 +140,18 @@ static void compile_trace(LspJit self[static 1], size_t f, TraceList trace[stati
                         regs[r1] = const_int(lsp_get_arg2(i));
                 } break;
                 case OP_JMP:
-                case OP_TEST:
-                        break;
+                case OP_TEST: {
+                        // if (r1 == true/false) { guard_handler() }
+                        LLVMValueRef val = const_int(n->metadata == NODE_MD_TRUE ? 1 : 0);
+                        LLVMValueRef cmp = LLVMBuildICmp(builder, LLVMIntEQ, regs[r1], val, "");
+                        LLVMBasicBlockRef guard_fail_bb = LLVMAppendBasicBlock(llvm_fn, "guard_fail");
+                        LLVMBasicBlockRef guard_ok_bb = LLVMAppendBasicBlock(llvm_fn, "guard_ok");
+                        LLVMBuildCondBr(builder, cmp, guard_fail_bb, guard_ok_bb);
+                        LLVMPositionBuilderAtEnd(builder, guard_fail_bb);
+                        LLVMBuildCall(builder, guard_fn, NULL, 0, "");
+                        LLVMBuildRet(builder, const_int(0));
+                        LLVMPositionBuilderAtEnd(builder, guard_ok_bb);
+                } break;
                 }
                 n = n->children[0];
         }
